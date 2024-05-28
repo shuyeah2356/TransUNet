@@ -48,18 +48,19 @@ ACT2FN = {"gelu": torch.nn.functional.gelu, "relu": torch.nn.functional.relu, "s
 
 
 class Attention(nn.Module):
+    # multi-head Attention
     def __init__(self, config, vis):
         super(Attention, self).__init__()
         self.vis = vis
-        self.num_attention_heads = config.transformer["num_heads"]
-        self.attention_head_size = int(config.hidden_size / self.num_attention_heads)
-        self.all_head_size = self.num_attention_heads * self.attention_head_size
+        self.num_attention_heads = config.transformer["num_heads"]  # head数量
+        self.attention_head_size = int(config.hidden_size / self.num_attention_heads)   # head向量维度
+        self.all_head_size = self.num_attention_heads * self.attention_head_size    # 所有head向量的维度
 
-        self.query = Linear(config.hidden_size, self.all_head_size)
-        self.key = Linear(config.hidden_size, self.all_head_size)
-        self.value = Linear(config.hidden_size, self.all_head_size)
+        self.query = Linear(config.hidden_size, self.all_head_size) # 初始化Wq矩阵
+        self.key = Linear(config.hidden_size, self.all_head_size)   # 初始化Wk矩阵
+        self.value = Linear(config.hidden_size, self.all_head_size) # 初始化Wv矩阵
 
-        self.out = Linear(config.hidden_size, config.hidden_size)
+        self.out = Linear(config.hidden_size, config.hidden_size)   
         self.attn_dropout = Dropout(config.transformer["attention_dropout_rate"])
         self.proj_dropout = Dropout(config.transformer["attention_dropout_rate"])
 
@@ -71,21 +72,21 @@ class Attention(nn.Module):
         return x.permute(0, 2, 1, 3)
 
     def forward(self, hidden_states):
-        mixed_query_layer = self.query(hidden_states)
-        mixed_key_layer = self.key(hidden_states)
-        mixed_value_layer = self.value(hidden_states)
+        mixed_query_layer = self.query(hidden_states)   # wq·x→W
+        mixed_key_layer = self.key(hidden_states)   # wk·x→K
+        mixed_value_layer = self.value(hidden_states)   # wv·x→V
 
         query_layer = self.transpose_for_scores(mixed_query_layer)
         key_layer = self.transpose_for_scores(mixed_key_layer)
         value_layer = self.transpose_for_scores(mixed_value_layer)
 
-        attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
-        attention_scores = attention_scores / math.sqrt(self.attention_head_size)
-        attention_probs = self.softmax(attention_scores)
+        attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))# q·kT计算得到attention score
+        attention_scores = attention_scores / math.sqrt(self.attention_head_size)   # attention score除以根号下dk(key向量的维度)
+        attention_probs = self.softmax(attention_scores)    # 计算softmax
         weights = attention_probs if self.vis else None
         attention_probs = self.attn_dropout(attention_probs)
 
-        context_layer = torch.matmul(attention_probs, value_layer)
+        context_layer = torch.matmul(attention_probs, value_layer)  # attention softmax结果与v矩阵相乘，得到特征向量维度与输入特征向量维度相同
         context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
         new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
         context_layer = context_layer.view(*new_context_layer_shape)
@@ -97,11 +98,10 @@ class Attention(nn.Module):
 class Mlp(nn.Module):
     def __init__(self, config):
         super(Mlp, self).__init__()
-        self.fc1 = Linear(config.hidden_size, config.transformer["mlp_dim"])
-        self.fc2 = Linear(config.transformer["mlp_dim"], config.hidden_size)
+        self.fc1 = Linear(config.hidden_size, config.transformer["mlp_dim"])    # 经过全连接层实现线性映射
+        self.fc2 = Linear(config.transformer["mlp_dim"], config.hidden_size)    # 经过全连接层实现线性映射，输出特征维度与输入特征维度相同
         self.act_fn = ACT2FN["gelu"]
         self.dropout = Dropout(config.transformer["dropout_rate"])
-
         self._init_weights()
 
     def _init_weights(self):
@@ -176,17 +176,20 @@ class Block(nn.Module):
 
     def forward(self, x):
         h = x
-        x = self.attention_norm(x)
-        x, weights = self.attn(x)
-        x = x + h
+        x = self.attention_norm(x)  # 对于输入序列，经过embedding，先经过LayerNormalization
+        x, weights = self.attn(x)   # 计算Attention，返回值为输出向量和权重
+        x = x + h   # resNet残差连接，防止模型退化
 
         h = x
-        x = self.ffn_norm(x)
-        x = self.ffn(x)
-        x = x + h
+        x = self.ffn_norm(x)    # LayerNormalization
+        x = self.ffn(x)     # 全连接层
+        x = x + h   # resNet残差连接
         return x, weights
 
     def load_from(self, weights, n_block):
+        """
+        从模型中复制权重和偏置
+        """
         ROOT = f"Transformer/encoderblock_{n_block}"
         with torch.no_grad():
             query_weight = np2th(weights[pjoin(ROOT, ATTENTION_Q, "kernel")]).view(self.hidden_size, self.hidden_size).t()
