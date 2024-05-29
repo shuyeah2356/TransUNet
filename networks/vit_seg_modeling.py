@@ -296,6 +296,9 @@ class Conv2dReLU(nn.Sequential):
 
 
 class DecoderBlock(nn.Module):
+    """
+    上采样block:
+    """
     def __init__(
             self,
             in_channels,
@@ -349,17 +352,20 @@ class DecoderCup(nn.Module):
             padding=1,
             use_batchnorm=True,
         )
-        decoder_channels = config.decoder_channels
-        in_channels = [head_channels] + list(decoder_channels[:-1])
+        
+        decoder_channels = config.decoder_channels  # [256,128,64,16]
+        in_channels = [head_channels] + list(decoder_channels[:-1]) # [512,256, 128, 64]
         out_channels = decoder_channels
+        if "n_skip" in self.config:
+            if self.config.n_skip != 0:
+                skip_channels = self.config.skip_channels
+                for i in range(4-self.config.n_skip):  # re-select the skip channels according to n_skip
+                    skip_channels[3-i]=0
 
-        if self.config.n_skip != 0:
-            skip_channels = self.config.skip_channels
-            for i in range(4-self.config.n_skip):  # re-select the skip channels according to n_skip
-                skip_channels[3-i]=0
-
+            else:
+                skip_channels=[0,0,0,0]
         else:
-            skip_channels=[0,0,0,0]
+            skip_channels = [0,0,0,0]
 
         blocks = [
             DecoderBlock(in_ch, out_ch, sk_ch) for in_ch, out_ch, sk_ch in zip(in_channels, out_channels, skip_channels)
@@ -367,11 +373,13 @@ class DecoderCup(nn.Module):
         self.blocks = nn.ModuleList(blocks)
 
     def forward(self, hidden_states, features=None):
+        # 进刚过Transformer得到特征层的维度是（N,D），经过reshape,特征层的维度变为（h/p,w/p,D）
         B, n_patch, hidden = hidden_states.size()  # reshape from (B, n_patch, hidden) to (B, h, w, hidden)
         h, w = int(np.sqrt(n_patch)), int(np.sqrt(n_patch))
-        x = hidden_states.permute(0, 2, 1)
-        x = x.contiguous().view(B, hidden, h, w)
-        x = self.conv_more(x)
+
+        x = hidden_states.permute(0, 2, 1)  # B,hidden,n_patch
+        x = x.contiguous().view(B, hidden, h, w)    # resize拆分成(B, hidden, h, w)维度
+        x = self.conv_more(x)   # 3×3卷积，输出通道数为512
         for i, decoder_block in enumerate(self.blocks):
             if features is not None:
                 skip = features[i] if (i < self.config.n_skip) else None
@@ -465,10 +473,13 @@ CONFIGS = {
 }
 # get_r50_b16_config
 if __name__ == "__main__":
-    embedding = Embeddings(CONFIGS['ViT-B_16'],(224,224))
-    print(embedding)
+    # embedding = Embeddings(CONFIGS['ViT-B_16'],(224,224))
+    # print(embedding)
     # encoder = Encoder(CONFIGS['ViT-B_16'],True)
     # print(encoder)
-    transformer = Transformer(CONFIGS['ViT-B_16'],(224,224), True)
-    print(transformer)
+    # transformer = Transformer(CONFIGS['ViT-B_16'],(224,224), True)
+    # print(transformer)
+
+    decoder = DecoderCup(CONFIGS['ViT-B_16'])
+    print(decoder)
 

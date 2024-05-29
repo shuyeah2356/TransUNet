@@ -43,7 +43,7 @@ block3堆叠多个bottleneck结构的卷积操作，步长为2，特征层宽高
 
   $Z=[X_p^1E,X_p^2E,...X_p^NE]+E_{pos}$
   
-  $E$ 表示将patch映射到D维线性空间的变换矩阵，是可训练的参数，$E_{pos}$ 表示位置编码。
+  $E$ 表示将patch映射到D维线性空间的变换矩阵，是可训练的参数， $E_{pos}$ 表示位置编码。
   线性空间变换之后矩阵维度是N×D，与位置编码相加得到向量维度是N×D。
 
 - Transformer结构可以由以下公式表示：
@@ -59,6 +59,11 @@ block3堆叠多个bottleneck结构的卷积操作，步长为2，特征层宽高
 
 ![alt text](image-3.png)
 
-  Patch数量$N$是由 $\frac{H×W}{p^2}$ 得到的，将 $N$ 转化为 $\frac{H}{p}×\frac{W}{p}$ <br>
+  patch数量 $N$ 是由 $\frac{H×W}{p^2}$ 得到的，将 $N$ 转化为 $\frac{H}{p}×\frac{W}{p}$ <br>
   Trasnformer输出结果（N,D）reshape成（D，H/p，W/p），再经过1×1卷积调整通道数得到（512，H/p，W/p）。
+
+## 2、Decoder（Cascaded Upsampler CUP）
+
+
+
   
