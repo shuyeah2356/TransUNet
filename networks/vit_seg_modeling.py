@@ -297,7 +297,9 @@ class Conv2dReLU(nn.Sequential):
 
 class DecoderBlock(nn.Module):
     """
-    上采样block:
+    上采样block:双线性插值上采样，经过两次卷积操作，
+    第一次卷积将特征通道与CNN 编码阶段的特征层在同道维度融合，
+    四次上采样操作，出处特征层通道数分别为：[(256, 128, 64, 16)]
     """
     def __init__(
             self,
@@ -352,7 +354,7 @@ class DecoderCup(nn.Module):
             padding=1,
             use_batchnorm=True,
         )
-        
+
         decoder_channels = config.decoder_channels  # [256,128,64,16]
         in_channels = [head_channels] + list(decoder_channels[:-1]) # [512,256, 128, 64]
         out_channels = decoder_channels
@@ -373,7 +375,7 @@ class DecoderCup(nn.Module):
         self.blocks = nn.ModuleList(blocks)
 
     def forward(self, hidden_states, features=None):
-        # 进刚过Transformer得到特征层的维度是（N,D），经过reshape,特征层的维度变为（h/p,w/p,D）
+        # 经过Transformer得到特征层的维度是（N,D），经过reshape,特征层的维度变为（h/p,w/p,D）
         B, n_patch, hidden = hidden_states.size()  # reshape from (B, n_patch, hidden) to (B, h, w, hidden)
         h, w = int(np.sqrt(n_patch)), int(np.sqrt(n_patch))
 
@@ -480,6 +482,6 @@ if __name__ == "__main__":
     # transformer = Transformer(CONFIGS['ViT-B_16'],(224,224), True)
     # print(transformer)
 
-    decoder = DecoderCup(CONFIGS['ViT-B_16'])
+    decoder = DecoderCup(CONFIGS['R50-ViT-B_16'])
     print(decoder)
 

@@ -64,6 +64,55 @@ block3堆叠多个bottleneck结构的卷积操作，步长为2，特征层宽高
 
 ## 2、Decoder（Cascaded Upsampler CUP）
 
+上采样过程使用双线性插值方法，使特征层宽高变为二倍，<br>
+3×3卷积，四次上采样输入的通道数为in_channels + skip_channels，将当前特征层大小与输入相同尺度的特征层在通道维度融合，经过两次3×3卷积操作，输出通道数为(256, 128, 64, 16)。
+代码实现对应：
+
+```python
+class DecoderBlock(nn.Module):  
+    def __init__(
+            self,
+            in_channels,
+            out_channels,
+            skip_channels=0,
+            use_batchnorm=True,
+    ):
+        super().__init__()
+        self.conv1 = Conv2dReLU(
+            in_channels + skip_channels,
+            out_channels,
+            kernel_size=3,
+            padding=1,
+            use_batchnorm=use_batchnorm,
+        )
+        self.conv2 = Conv2dReLU(
+            out_channels,
+            out_channels,
+            kernel_size=3,
+            padding=1,
+            use_batchnorm=use_batchnorm,
+        )
+        self.up = nn.UpsamplingBilinear2d(scale_factor=2)
+
+    def forward(self, x, skip=None):
+        x = self.up(x)
+        if skip is not None:
+            x = torch.cat([x, skip], dim=1)
+        x = self.conv1(x)
+        x = self.conv2(x)
+        return x
+```
+
+最后将特征层通道数调整为分类数量：
+```python
+self.segmentation_head = SegmentationHead(
+            in_channels=config['decoder_channels'][-1],
+            out_channels=config['n_classes'],
+            kernel_size=3,
+        )
+```
+
+
 
 
   
