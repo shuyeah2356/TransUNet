@@ -20,7 +20,7 @@ class StdConv2d(nn.Conv2d):
     def forward(self, x):
         w = self.weight
         v, m = torch.var_mean(w, dim=[1, 2, 3], keepdim=True, unbiased=False)
-        w = (w - m) / torch.sqrt(v + 1e-5)
+        w = (w - m) / torch.sqrt(v + 1e-5)# 权重归一化，减均值除以方差
         return F.conv2d(x, w, self.bias, self.stride, self.padding,
                         self.dilation, self.groups)
 
@@ -158,3 +158,12 @@ class ResNetV2(nn.Module):
             features.append(feat)
         x = self.body[-1](x)
         return x, features[::-1]
+
+
+if __name__ == "__main__":
+    resnet = ResNetV2((3,4,9), 1)
+    img = torch.Tensor(1,3,224,224)
+    x, f = resnet(img)
+    print(type(x), 'xxxxxxxxx')
+    print(type(f), 'fffffffff')
+    print(f)

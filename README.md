@@ -1,54 +1,48 @@
 # TransUNet
-This repo holds code for [TransUNet: Transformers Make Strong Encoders for Medical Image Segmentation](https://arxiv.org/pdf/2102.04306.pdf)
+项目来自：[TransUNet](https://github.com/Beckschen/TransUNet)<br>
+论文：[TransUNet: Transformers Make Strong Encoders for Medical Image Segmentation](https://arxiv.org/pdf/2102.04306.pdf)
 
-## 📰 News
+## TransUNet结构
+结合UNet和Transformer,具体模块包含ViT+ResNet50+skip connection<br>
+在编码器中使用**hybrid CNN-Transformer**<br>
+解码过程使用**Cascaded Upsampler**<br>
+既能提取CNN的局部细节信息，又能提取到Transformer的全局上下文信息。
 
-- [10/15/2023] 🔥 3D version of TransUNet is out! Our 3D TransUNet surpasses nn-UNet with 88.11% Dice score on the BTCV dataset and outperforms the top-1 solution in the BraTs 2021 challenge. Please take a look at the [code](https://github.com/Beckschen/3D-TransUNet/tree/main) and [paper](https://arxiv.org/abs/2310.07781).
+原始输入维度是H×W×C，期望输出能够划分出每一个像素值的类别，实现分割。在UNet结构上增加了**self-attention**机制，通过在**encoder**中增加**Transformer**来实现。
 
-## Usage
+TransUNet整体网络结构：
+![alt text](image.png)
 
-### 1. Download Google pre-trained ViT models
-* [Get models in this link](https://console.cloud.google.com/storage/vit_models/): R50-ViT-B_16, ViT-B_16, ViT-L_16...
-```bash
-wget https://storage.googleapis.com/vit_models/imagenet21k/{MODEL_NAME}.npz &&
-mkdir ../model/vit_checkpoint/imagenet21k &&
-mv {MODEL_NAME}.npz ../model/vit_checkpoint/imagenet21k/{MODEL_NAME}.npz
-```
+## 1、Encoder（hybrid CNN-Transformer）
 
-### 2. Prepare data
+encoder中的CNN<br>
 
-Please go to ["./datasets/README.md"](datasets/README.md) for details, or use the [preprocessed data](https://drive.google.com/drive/folders/1ACJEoTp-uqfFJ73qS3eUObQh52nGuzCd?usp=sharing) and [data2](https://drive.google.com/drive/folders/1KQcrci7aKsYZi1hQoZ3T3QUtcy7b--n4?usp=drive_link) for research purposes.
+- Resnet网络提取特征，对图片做下采样处理。一次下采样接多个bottleneck block。
+- 输出的特征层经过embedding 处理
+  ![alt text](image-4.png)
 
-### 3. Environment
+对于输入到Transformer中的序列必须是一维的，需要对输入的图片做变换处理。
 
-Please prepare an environment with python=3.7, and then use the command "pip install -r requirements.txt" for the dependencies.
+- 首先将H×W原始图片划分成P×P大小的patch,patch数量为N。
+  N=$\frac{H×W}{p^2}$
+- patch embedding:将patch向量映射到D维空间，并增加位置编码
 
-### 4. Train/Test
+  Z=$[X_p^1E,X_p^2E,...X_p^NE]+E_{pos}$
+  
+  $E$表示将patch映射到D维线性空间的变换矩阵，是可训练的参数，$E_{pos}$表示位置编码。
+  线性空间变换之后矩阵维度是N×D，与位置编码相加得到向量维度是N×D。
 
-- Run the train script on synapse dataset. The batch size can be reduced to 12 or 6 to save memory (please also decrease the base_lr linearly), and both can reach similar performance.
+- Transformer结构可以由以下公式表示：
+  
+  $z'_l=MSA(LN(z_{l-1}))+z_{l-1}$,<br>
+  $z_l=MLP(LN(z'_l))+z'_l$,<br>
 
-```bash
-CUDA_VISIBLE_DEVICES=0 python train.py --dataset Synapse --vit_name R50-ViT-B_16
-```
+  首先经过Layer Normalization，经过Multi-head Self Attention,再加上残差结构。<br>
+  结果再经过Layer Normalization，经过MLP全连接，再加上残差结构<br>实现Transformer。
 
-- Run the test script on synapse dataset. It supports testing for both 2D images and 3D volumes.
+- 经过Transformer结构的输出向量维度是N×D，需要经过一步变换，使得上采样过程能够还原到原始的图像分辨率。对应网络结构图的这个位置：
+![alt text](image-3.png)
 
-```bash
-python test.py --dataset Synapse --vit_name R50-ViT-B_16
-```
-
-## Reference
-* [Google ViT](https://github.com/google-research/vision_transformer)
-* [ViT-pytorch](https://github.com/jeonsworld/ViT-pytorch)
-* [segmentation_models.pytorch](https://github.com/qubvel/segmentation_models.pytorch)
-
-## Citations
-
-```bibtex
-@article{chen2021transunet,
-  title={TransUNet: Transformers Make Strong Encoders for Medical Image Segmentation},
-  author={Chen, Jieneng and Lu, Yongyi and Yu, Qihang and Luo, Xiangde and Adeli, Ehsan and Wang, Yan and Lu, Le and Yuille, Alan L., and Zhou, Yuyin},
-  journal={arXiv preprint arXiv:2102.04306},
-  year={2021}
-}
-```
+  Patch数量$N$是由$\frac{H×W}{p^2}$得到的，将$N$转化为$\frac{H}{p}×\frac{W}{p}$<br>
+  Trasnformer输出结果（N,D）reshape成（D，H/p，W/p），再经过1×1卷积调整通道数得到（512，H/p，W/p）。
+  

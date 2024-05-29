@@ -16,8 +16,10 @@ import numpy as np
 from torch.nn import CrossEntropyLoss, Dropout, Softmax, Linear, Conv2d, LayerNorm
 from torch.nn.modules.utils import _pair
 from scipy import ndimage
-from . import vit_seg_configs as configs
-from .vit_seg_modeling_resnet_skip import ResNetV2
+import vit_seg_configs as configs
+from vit_seg_modeling_resnet_skip import ResNetV2
+# from . import vit_seg_configs as configs
+# from .vit_seg_modeling_resnet_skip import ResNetV2
 
 
 logger = logging.getLogger(__name__)
@@ -120,21 +122,23 @@ class Mlp(nn.Module):
 
 
 class Embeddings(nn.Module):
-    """Construct the embeddings from patch, position embeddings.
+    """
+    Construct the embeddings from patch, position embeddings.
     """
     def __init__(self, config, img_size, in_channels=3):
         super(Embeddings, self).__init__()
-        self.hybrid = None
+        self.hybrid = True
         self.config = config
         img_size = _pair(img_size)
 
         if config.patches.get("grid") is not None:   # ResNet
-            grid_size = config.patches["grid"]
-            patch_size = (img_size[0] // 16 // grid_size[0], img_size[1] // 16 // grid_size[1])
+            grid_size = config.patches["grid"]  # patch大小取值为16
+            patch_size = (img_size[0] // 16 // grid_size[0], img_size[1] // 16 // grid_size[1])# ？？？
             patch_size_real = (patch_size[0] * 16, patch_size[1] * 16)
-            n_patches = (img_size[0] // patch_size_real[0]) * (img_size[1] // patch_size_real[1])  
-            self.hybrid = True
+            n_patches = (img_size[0] // patch_size_real[0]) * (img_size[1] // patch_size_real[1])  # 原始图片划分为多少个patch
+            self.hybrid = True  # 混合CNN和Transformer
         else:
+            # encoder中通过Transformer实现
             patch_size = _pair(config.patches["size"])
             n_patches = (img_size[0] // patch_size[0]) * (img_size[1] // patch_size[1])
             self.hybrid = False
@@ -142,11 +146,17 @@ class Embeddings(nn.Module):
         if self.hybrid:
             self.hybrid_model = ResNetV2(block_units=config.resnet.num_layers, width_factor=config.resnet.width_factor)
             in_channels = self.hybrid_model.width * 16
+        """
+        经原始图片划分成patch,通过卷积实现,卷积和大小为P×P(16×16)
+        输入通道数为ResNet处理后输出width*16
+        输出通道数为Transformer规定的数据维度
+        卷积步长为P
+        """
         self.patch_embeddings = Conv2d(in_channels=in_channels,
                                        out_channels=config.hidden_size,
                                        kernel_size=patch_size,
                                        stride=patch_size)
-        self.position_embeddings = nn.Parameter(torch.zeros(1, n_patches, config.hidden_size))
+        self.position_embeddings = nn.Parameter(torch.zeros(1, n_patches, config.hidden_size))# （1, N, D）
 
         self.dropout = Dropout(config.transformer["dropout_rate"])
 
@@ -233,6 +243,7 @@ class Encoder(nn.Module):
         self.vis = vis
         self.layer = nn.ModuleList()
         self.encoder_norm = LayerNorm(config.hidden_size, eps=1e-6)
+        # trasnformer堆叠了多少层
         for _ in range(config.transformer["num_layers"]):
             layer = Block(config, vis)
             self.layer.append(copy.deepcopy(layer))
@@ -452,5 +463,12 @@ CONFIGS = {
     'R50-ViT-L_16': configs.get_r50_l16_config(),
     'testing': configs.get_testing(),
 }
-
+# get_r50_b16_config
+if __name__ == "__main__":
+    embedding = Embeddings(CONFIGS['ViT-B_16'],(224,224))
+    print(embedding)
+    # encoder = Encoder(CONFIGS['ViT-B_16'],True)
+    # print(encoder)
+    transformer = Transformer(CONFIGS['ViT-B_16'],(224,224), True)
+    print(transformer)
 
