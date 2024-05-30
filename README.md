@@ -8,7 +8,7 @@
 解码过程使用**Cascaded Upsampler**<br>
 既能提取CNN的局部细节信息，又能提取到Transformer的全局上下文信息。
 
-原始输入维度是H×W×C，期望输出能够划分出每一个像素值的类别，实现分割。在UNet结构上增加了**self-attention**机制，通过在**encoder**中增加**Transformer**来实现。
+原始输入维度是H×W×C，期望输出能够划分出每一个像素值的类别，实现分割。在UNet结构上增加了**self-attention**机制，通过**Transformer**来实现。
 
 TransUNet整体网络结构：
 ![alt text](image.png)
